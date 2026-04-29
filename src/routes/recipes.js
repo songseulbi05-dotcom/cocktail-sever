@@ -12,6 +12,10 @@ const router = express.Router(); // Router 객체 생성
 router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
   try {
     const { name, description } = req.body;
+    if (!req.file) {
+      return res.status(400).json({ message: "이미지를 선택해주세요." });
+    }
+
     const image = req.file.filename; // 업로드된 파일의 이름
     const userId = req.userId;
     // FormData로 전송된 JSON 문자열 피싱
@@ -43,7 +47,8 @@ router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
 
     res.status(201).json({ name, image, description });
   } catch (error) {
-    res.status(500).json({ message: "서버 에러" });
+    console.error(error);
+    res.status(200).json([]);
   }
 });
 
@@ -53,35 +58,59 @@ router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
 // -> app.js에서 app.use("/recipes", recipesRouter)로 연결되었기 때문에
 // 실제 주소는 GET /recipes
 router.get("/", async (req, res) => {
-  const keyword = req.query.keyword;
-  if (keyword === undefined) {
-    const [result] = await pool.query(`SELECT * FROM recipes ORDER BY id DESC`);
-    res.status(200).json(result);
-  } else {
-    const searchKeyword = `%${keyword}%`;
-    const [result] = await pool.query(
-      `SELECT * FROM recipes WHERE name LIKE ? ORDER BY id DESC`,
-      [searchKeyword],
-    );
-    res.status(200).json(result);
+  try {
+    const keyword = req.query.keyword;
+    if (keyword === undefined) {
+      const [result] = await pool.query(
+        `SELECT * FROM recipes ORDER BY id DESC`,
+      );
+      res.status(200).json(result);
+    } else {
+      const searchKeyword = `%${keyword}%`;
+      const [result] = await pool.query(
+        `SELECT * FROM recipes WHERE name LIKE ? ORDER BY id DESC`,
+        [searchKeyword],
+      );
+      res.status(200).json(result);
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(200).json([]);
   }
 });
 
 // http://localhost:4000/recipes/:id
 router.get("/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const [result] = await pool.query("SELECT * FROM recipes WHERE id = ?", [
+      id,
+    ]);
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: "레시피를 찾을 수 없습니다." });
+    }
+
+    const [ingredients] = await pool.query(
+      "SELECT * FROM ingredients WHERE recipe_id = ?",
+      [id],
+    );
+    const [directions] = await pool.query(
+      "SELECT * FROM directions WHERE recipe_id = ?",
+      [id],
+    );
+
+    res.status(200).json({ result: result[0], ingredients, directions });
+  } catch (error) {
+    res.status(500).json({ message: "서버 에러" });
+  }
+});
+
+// http://localhost:4000/recipes/:id
+router.delete("/:id", async (req, res) => {
   const id = req.params.id;
-  const [result] = await pool.query("SELECT * FROM recipes WHERE id = ?", [id]);
-
-  const [ingredients] = await pool.query(
-    "SELECT * FROM ingredients WHERE recipe_id = ?",
-    [id],
-  );
-  const [directions] = await pool.query(
-    "SELECT * FROM directions WHERE recipe_id = ?",
-    [id],
-  );
-
-  res.status(200).json({ result: result[0], ingredients, directions });
+  await pool.query("DELETE FROM recipes WHERE id = ?", [id]);
+  res.status(200).json({ message: "레시피 삭제 완료" });
 });
 
 export default router;

@@ -70,7 +70,9 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign({ userId: user.id }, process.env.SECRET_KEY, {
       expiresIn: "7d",
     });
-    res.status(200).json({ message: "로그인 성공", token, name: user.name });
+    res
+      .status(200)
+      .json({ message: "로그인 성공", token, name: user.name, id: user.id });
   } catch (error) {
     res.status(500).json({ message: "서버 에러" });
   }
