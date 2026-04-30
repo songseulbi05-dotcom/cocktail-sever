@@ -5,7 +5,15 @@ import "dotenv/config";
 const authMiddleware = (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ message: "로그인이 필요합니다." });
+    }
+
     const token = authHeader.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ message: "로그인이 필요합니다." });
+    }
+
     // 토큰이 유효한지 검사 -> 안에 담긴 정보 꺼냄
     // jwt.verify(토큰, 비밀키)
     const decoded = jwt.verify(token, process.env.SECRET_KEY);

@@ -3,6 +3,13 @@ import express from "express";
 import pool from "../db.js";
 import authMiddleware from "../middleware/auth.js";
 import upload from "../middleware/upload.js";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const imageDir = path.join(__dirname, "../uploads");
 
 const router = express.Router(); // Router 객체 생성
 // router는 app처럼 get, post, put, delete 사용 가능
@@ -48,7 +55,7 @@ router.post("/", authMiddleware, upload.single("image"), async (req, res) => {
     res.status(201).json({ name, image, description });
   } catch (error) {
     console.error(error);
-    res.status(200).json([]);
+    res.status(500).json({ message: "서버 에러" });
   }
 });
 
@@ -75,7 +82,7 @@ router.get("/", async (req, res) => {
     }
   } catch (error) {
     console.error(error);
-    res.status(200).json([]);
+    res.status(500).json({ message: "서버 에러" });
   }
 });
 
@@ -103,6 +110,66 @@ router.get("/:id", async (req, res) => {
     res.status(200).json({ result: result[0], ingredients, directions });
   } catch (error) {
     res.status(500).json({ message: "서버 에러" });
+  }
+});
+
+// http://localhost:4000/recipes/:id
+router.put("/:id", authMiddleware, upload.single("image"), async (req, res) => {
+  const conn = await pool.getConnection();
+
+  try {
+    const id = req.params.id;
+    const userId = req.userId;
+    const { name, description } = req.body;
+    const ingredients = JSON.parse(req.body.ingredients);
+    const directions = JSON.parse(req.body.directions);
+
+    const [recipes] = await conn.query("SELECT * FROM recipes WHERE id = ?", [
+      id,
+    ]);
+
+    if (recipes.length === 0) {
+      return res.status(404).json({ message: "레시피를 찾을 수 없습니다." });
+    }
+
+    if (recipes[0].user_id !== userId) {
+      return res.status(403).json({ message: "수정 권한이 없습니다." });
+    }
+
+    const image = req.file ? req.file.filename : recipes[0].image;
+
+    await conn.beginTransaction();
+
+    await conn.query(
+      "UPDATE recipes SET name = ?, image = ?, description = ? WHERE id = ?",
+      [name, image, description, id],
+    );
+
+    await conn.query("DELETE FROM ingredients WHERE recipe_id = ?", [id]);
+    for (const ingredient of ingredients) {
+      await conn.query(
+        "INSERT INTO ingredients(recipe_id, name, amount) VALUES (?, ?, ?)",
+        [id, ingredient.name, ingredient.amount],
+      );
+    }
+
+    await conn.query("DELETE FROM directions WHERE recipe_id = ?", [id]);
+    for (const direction of directions) {
+      await conn.query(
+        "INSERT INTO directions(recipe_id, content) VALUES (?, ?)",
+        [id, direction.content],
+      );
+    }
+
+    await conn.commit();
+
+    res.status(200).json({ message: "레시피 수정 완료" });
+  } catch (error) {
+    await conn.rollback();
+    console.error(error);
+    res.status(500).json({ message: "서버 에러" });
+  } finally {
+    conn.release();
   }
 });
 
